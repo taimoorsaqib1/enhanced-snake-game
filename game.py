@@ -14,8 +14,8 @@ except ImportError:
 
 # --- Constants ---
 CELL_SIZE = 20
-GRID_WIDTH = 30
-GRID_HEIGHT = 20
+GRID_WIDTH = 35
+GRID_HEIGHT = 25
 SCREEN_WIDTH = CELL_SIZE * GRID_WIDTH
 SCREEN_HEIGHT = CELL_SIZE * GRID_HEIGHT
 FPS = 60  # Increased for smoother animation
@@ -41,6 +41,16 @@ RIGHT = (1, 0)
 
 HIGH_SCORE_FILE = "highscore.txt"
 OBSTACLE_COUNT = 10
+
+# UNFAIR GAME MECHANICS
+UNFAIR_MODE = True
+FAKE_FOOD_CHANCE = 0.15  # 15% chance food is fake
+TELEPORT_OBSTACLES_CHANCE = 0.1  # 10% chance obstacles teleport
+INVISIBLE_SNAKE_CHANCE = 0.08  # 8% chance snake becomes invisible
+SPEED_BOOST_TRAP_CHANCE = 0.1  # 10% chance food gives unwanted speed boost
+FAKE_WALLS_CHANCE = 0.05  # 5% chance fake walls appear
+FOG_OF_WAR_CHANCE = 0.06  # 6% chance fog of war activates
+FOG_VISION_RADIUS = 4  # How many cells visible around snake head
 
 # Enhanced Particle system
 class EnhancedParticle:
@@ -462,7 +472,9 @@ def place_food(snake, obstacles=[]):
         pos = (random.randint(0, GRID_WIDTH-1),
                random.randint(0, GRID_HEIGHT-1))
         if pos not in snake and pos not in obstacles:
-            return pos
+            # Mark if this food is fake (unfair mechanic)
+            is_fake = UNFAIR_MODE and random.random() < FAKE_FOOD_CHANCE
+            return pos, is_fake
 
 def create_food_particles(x, y):
     """Create particles when food is eaten"""
@@ -537,16 +549,22 @@ def show_title_screen(surface, font, high_score):
     
     # Animated title with glow effect
     title_color = (50 + int(50 * math.sin(time.time() * 3)), 255, 50)
-    title = font.render("🐍 SNAKE GAME 🐍", True, title_color)
+    title = font.render("🐍 UNFAIR SNAKE GAME �", True, title_color)
+    
+    warning_color = (255, 50, 50) if time.time() % 0.5 < 0.25 else (255, 150, 150)
+    warning = font.render("⚠️ WARNING: THIS GAME CHEATS! ⚠️", True, warning_color)
     
     hs_text = font.render(f"🏆 High Score: {high_score}", True, TEXT_COLOR)
-    instr = font.render("Press any key to start", True, TEXT_COLOR)
-    controls = font.render("Use arrow keys to move", True, (150, 150, 150))
+    instr = font.render("Press any key to start (good luck!)", True, TEXT_COLOR)
+    controls = font.render("Arrow keys to move (when they work properly)", True, (150, 150, 150))
+    disclaimer = font.render("Expect: Fake food, teleporting walls, invisible snake, fog of war...", True, (200, 100, 100))
     
-    surface.blit(title, (SCREEN_WIDTH//2 - title.get_width()//2, SCREEN_HEIGHT//3))
-    surface.blit(hs_text, (SCREEN_WIDTH//2 - hs_text.get_width()//2, SCREEN_HEIGHT//3 + 50))
-    surface.blit(instr, (SCREEN_WIDTH//2 - instr.get_width()//2, SCREEN_HEIGHT//3 + 90))
-    surface.blit(controls, (SCREEN_WIDTH//2 - controls.get_width()//2, SCREEN_HEIGHT//3 + 130))
+    surface.blit(title, (SCREEN_WIDTH//2 - title.get_width()//2, SCREEN_HEIGHT//3 - 30))
+    surface.blit(warning, (SCREEN_WIDTH//2 - warning.get_width()//2, SCREEN_HEIGHT//3))
+    surface.blit(hs_text, (SCREEN_WIDTH//2 - hs_text.get_width()//2, SCREEN_HEIGHT//3 + 40))
+    surface.blit(instr, (SCREEN_WIDTH//2 - instr.get_width()//2, SCREEN_HEIGHT//3 + 80))
+    surface.blit(controls, (SCREEN_WIDTH//2 - controls.get_width()//2, SCREEN_HEIGHT//3 + 110))
+    surface.blit(disclaimer, (SCREEN_WIDTH//2 - disclaimer.get_width()//2, SCREEN_HEIGHT//3 + 140))
     
     pygame.display.flip()
     while True:
@@ -556,11 +574,11 @@ def show_title_screen(surface, font, high_score):
             elif e.type == pygame.KEYDOWN:
                 return
 
-def generate_obstacles(snake, food):
+def generate_obstacles(snake, food_pos):
     obs = []
     while len(obs) < OBSTACLE_COUNT:
         pos = (random.randint(0, GRID_WIDTH-1), random.randint(0, GRID_HEIGHT-1))
-        if pos not in snake and pos != food and pos not in obs:
+        if pos not in snake and pos != food_pos and pos not in obs:
             obs.append(pos)
     return obs
 
@@ -574,9 +592,15 @@ def draw_obstacles(surface, obstacles):
         inner_rect = pygame.Rect(pos[0]*CELL_SIZE+2, pos[1]*CELL_SIZE+2, CELL_SIZE-4, CELL_SIZE-4)
         pygame.draw.rect(surface, (80, 80, 80), inner_rect)
 
-def draw_food_with_glow(surface, food_pos):
-    """Draw food with pulsing glow effect"""
-    glow_intensity = 0.5 + 0.5 * math.sin(time.time() * 5)
+def draw_food_with_glow(surface, food_pos, is_fake=False):
+    """Draw food with pulsing glow effect - fake food looks suspicious"""
+    if is_fake:
+        # Fake food flickers and has a different color
+        glow_intensity = 0.3 + 0.7 * abs(math.sin(time.time() * 15))  # Faster flicker
+        base_color = (255, 150, 50)  # Orange-ish
+    else:
+        glow_intensity = 0.5 + 0.5 * math.sin(time.time() * 5)
+        base_color = FOOD_COLOR
     
     # Draw glow
     glow_size = int(CELL_SIZE + 6 * glow_intensity)
@@ -585,16 +609,141 @@ def draw_food_with_glow(surface, food_pos):
         food_pos[1]*CELL_SIZE - (glow_size-CELL_SIZE)//2,
         glow_size, glow_size
     )
-    glow_color = (int(255 * glow_intensity), int(50 * glow_intensity), int(50 * glow_intensity))
+    glow_color = (int(base_color[0] * glow_intensity * 0.5), 
+                  int(base_color[1] * glow_intensity * 0.2), 
+                  int(base_color[2] * glow_intensity * 0.2))
     pygame.draw.rect(surface, glow_color, glow_rect)
     
     # Draw food
     food_rect = pygame.Rect(food_pos[0]*CELL_SIZE, food_pos[1]*CELL_SIZE, CELL_SIZE, CELL_SIZE)
-    pygame.draw.rect(surface, FOOD_COLOR, food_rect)
+    pygame.draw.rect(surface, base_color, food_rect)
+    
     # Add shine effect
-    shine_rect = pygame.Rect(food_pos[0]*CELL_SIZE+2, food_pos[1]*CELL_SIZE+2, CELL_SIZE//3, CELL_SIZE//3)
-    pygame.draw.rect(surface, (255, 200, 200), shine_rect)
+    if is_fake:
+        # Fake food has an ominous dark spot
+        shine_rect = pygame.Rect(food_pos[0]*CELL_SIZE+6, food_pos[1]*CELL_SIZE+6, CELL_SIZE//4, CELL_SIZE//4)
+        pygame.draw.rect(surface, (100, 50, 50), shine_rect)
+    else:
+        shine_rect = pygame.Rect(food_pos[0]*CELL_SIZE+2, food_pos[1]*CELL_SIZE+2, CELL_SIZE//3, CELL_SIZE//3)
+        pygame.draw.rect(surface, (255, 200, 200), shine_rect)
 
+def apply_unfair_mechanics(snake_positions, obstacles):
+    """Apply various unfair mechanics"""
+    global particles
+    
+    # Teleport obstacles randomly
+    if UNFAIR_MODE and random.random() < TELEPORT_OBSTACLES_CHANCE:
+        for i in range(len(obstacles)):
+            new_pos = (random.randint(0, GRID_WIDTH-1), random.randint(0, GRID_HEIGHT-1))
+            if new_pos not in snake_positions:
+                # Create teleport particles at old position
+                create_explosion_particles(obstacles[i][0], obstacles[i][1])
+                obstacles[i] = new_pos
+                # Create teleport particles at new position
+                create_explosion_particles(new_pos[0], new_pos[1])
+
+def draw_unfair_warnings(surface, small_font, invisible_snake, speed_boost_active, fog_of_war):
+    """Draw warnings about active unfair mechanics"""
+    warnings = []
+    if invisible_snake > 0:
+        warnings.append("SNAKE INVISIBLE!")
+    if speed_boost_active > 0:
+        warnings.append("SPEED TRAP ACTIVE!")
+    if fog_of_war > 0:
+        warnings.append("FOG OF WAR ACTIVE!")
+    
+    for i, warning in enumerate(warnings):
+        color = (255, 50, 50) if time.time() % 0.5 < 0.25 else (255, 150, 150)  # Flashing red
+        warning_surf = small_font.render(warning, True, color)
+        surface.blit(warning_surf, (SCREEN_WIDTH - warning_surf.get_width() - 10, 10 + i * 25))
+
+def process_input_buffer(current_direction):
+    """Process buffered input"""
+    global input_buffer
+    
+    for buffered_direction in input_buffer:
+        if is_valid_direction_change(current_direction, buffered_direction):
+            input_buffer.clear()
+            return buffered_direction
+    
+    input_buffer.clear()
+    return current_direction
+
+def draw_snake_unfair(surface, snake_positions, invisible_snake):
+    """Draw snake with potential invisibility"""
+    if invisible_snake > 0:
+        # Snake is partially invisible but more visible than before
+        alpha = max(0.1, 0.2 * abs(math.sin(time.time() * 8)))  # Flickering visibility (10% to 30%)
+        for idx, pos in enumerate(snake_positions):
+            color = SNAKE_HEAD if idx == 0 else SNAKE_BODY
+            # Make it translucent but still visible
+            faint_color = tuple(int(c * alpha) for c in color)
+            rect = pygame.Rect(pos[0]*CELL_SIZE, pos[1]*CELL_SIZE, CELL_SIZE, CELL_SIZE)
+            pygame.draw.rect(surface, faint_color, rect)
+            
+            # Add a flickering outline to help visibility
+            if alpha > 0.5:
+                outline_color = tuple(int(c * 0.8) for c in color)
+                pygame.draw.rect(surface, outline_color, rect, 2)
+    else:
+        # Normal snake drawing but call the smooth version
+        draw_snake_smooth(surface, snake_positions)
+
+def create_fake_walls(snake_positions, food_pos):
+    """Create fake walls that look real but aren't"""
+    fake_walls = []
+    if UNFAIR_MODE and random.random() < FAKE_WALLS_CHANCE:
+        for _ in range(3):  # Create 3 fake walls
+            pos = (random.randint(0, GRID_WIDTH-1), random.randint(0, GRID_HEIGHT-1))
+            if pos not in snake_positions and pos != food_pos:
+                fake_walls.append(pos)
+    return fake_walls
+
+def draw_fake_walls(surface, fake_walls):
+    """Draw fake walls that look like real obstacles"""
+    for pos in fake_walls:
+        rect = pygame.Rect(pos[0]*CELL_SIZE, pos[1]*CELL_SIZE, CELL_SIZE, CELL_SIZE)
+        # Make them look slightly different (more transparent)
+        fake_color = (100, 100, 100)  # Slightly different gray
+        pygame.draw.rect(surface, fake_color, rect)
+        pygame.draw.rect(surface, (120, 120, 120), rect, 2)
+        # Add a subtle "fake" indicator - very small dot
+        pygame.draw.circle(surface, (150, 0, 0), (pos[0]*CELL_SIZE + CELL_SIZE//2, pos[1]*CELL_SIZE + CELL_SIZE//2), 1)
+
+def draw_fog_of_war(surface, snake_head_pos, fog_active):
+    """Draw fog of war that only shows area around snake head"""
+    if fog_active <= 0:
+        return
+    
+    # Create a black overlay for the entire screen
+    fog_overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+    fog_overlay.fill((0, 0, 0))
+    
+    # Create circular visibility around snake head
+    head_pixel_x = int(snake_head_pos[0] * CELL_SIZE + CELL_SIZE // 2)
+    head_pixel_y = int(snake_head_pos[1] * CELL_SIZE + CELL_SIZE // 2)
+    
+    # Draw visible area as a circle
+    vision_radius_pixels = FOG_VISION_RADIUS * CELL_SIZE
+    
+    # Create a mask for the visible area
+    mask = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+    mask.fill((255, 255, 255))
+    
+    # Draw black circle to make area transparent
+    pygame.draw.circle(mask, (0, 0, 0), (head_pixel_x, head_pixel_y), vision_radius_pixels)
+    
+    # Apply alpha to make fog semi-transparent for dramatic effect
+    fog_intensity = 0.8 + 0.2 * abs(math.sin(time.time() * 2))  # Pulsing fog
+    fog_overlay.set_alpha(int(255 * fog_intensity))
+    
+    # Use the mask to create the fog effect
+    fog_overlay.blit(mask, (0, 0), special_flags=pygame.BLEND_MULT)
+    
+    # Draw the fog overlay on the main surface
+    surface.blit(fog_overlay, (0, 0))
+
+# ...existing code...
 def main():
     global sound_manager, input_buffer, game_timer
     pygame.init()
@@ -602,7 +751,7 @@ def main():
     clock = pygame.time.Clock()
     font = pygame.font.SysFont(None, 36)
     small_font = pygame.font.SysFont(None, 24)
-    pygame.display.set_caption("🐍 Enhanced Snake Game Pro")
+    pygame.display.set_caption("🐍 UNFAIR Snake Game - Prepare to Rage! 😈")
     
     # Initialize enhanced sound
     sound_manager = EnhancedSoundManager()
@@ -612,12 +761,18 @@ def main():
                       (GRID_WIDTH//2-2, GRID_HEIGHT//2)]
     smooth_snake = SmoothSnake(snake_positions)
     direction = RIGHT
-    food = place_food(snake_positions)
+    food_pos, is_fake_food = place_food(snake_positions)
     score = 0
     level = 1
     high_score = load_highscore()
     show_title_screen(screen, font, high_score)
-    obstacles = generate_obstacles(snake_positions, food)
+    obstacles = generate_obstacles(snake_positions, food_pos)
+    
+    # Unfair game state variables
+    invisible_snake = 0
+    speed_boost_active = 0
+    fog_of_war = 0
+    fake_walls = []
     
     # Start background music
     sound_manager.play_background_music()
@@ -626,10 +781,33 @@ def main():
     input_buffer.clear()
     game_timer = 0
     last_move_time = 0
+    last_unfair_check = 0
 
     while True:
         dt = clock.tick(FPS) / 1000.0  # Delta time in seconds
         game_timer += dt
+        
+        # Apply unfair mechanics every few seconds
+        if game_timer - last_unfair_check > 2.0:  # Check every 2 seconds
+            last_unfair_check = game_timer
+            apply_unfair_mechanics(snake_positions, obstacles)
+            
+            # Invisible snake chance
+            if UNFAIR_MODE and random.random() < INVISIBLE_SNAKE_CHANCE:
+                invisible_snake = 180  # 3 seconds at 60fps
+            
+            # Fog of war chance
+            if UNFAIR_MODE and random.random() < FOG_OF_WAR_CHANCE:
+                fog_of_war = 240  # 4 seconds at 60fps
+            
+            # Create fake walls
+            if len(fake_walls) == 0:  # Only if no fake walls exist
+                fake_walls = create_fake_walls(snake_positions, food_pos)
+        
+        # Decrease unfair effect timers
+        invisible_snake = max(0, invisible_snake - 1)
+        speed_boost_active = max(0, speed_boost_active - 1)
+        fog_of_war = max(0, fog_of_war - 1)
         
         # Event handling
         for e in pygame.event.get():
@@ -652,11 +830,13 @@ def main():
                 if len(input_buffer) > 2:
                     input_buffer = input_buffer[-2:]
 
-        # Process buffered input and update direction
+        # Process buffered input
         direction = process_input_buffer(direction)
 
-        # Game logic timing (slower than rendering)
-        current_speed = GAME_SPEED + score // 3
+        # Game logic timing (affected by speed boost trap and fog of war)
+        speed_multiplier = 2.0 if speed_boost_active > 0 else 1.0
+        fog_multiplier = 0.6 if fog_of_war > 0 else 1.0  # Slower during fog
+        current_speed = (GAME_SPEED + score // 3) * speed_multiplier * fog_multiplier
         move_interval = 1.0 / current_speed
         
         if game_timer - last_move_time >= move_interval:
@@ -664,8 +844,11 @@ def main():
             
             # Move snake
             head = (snake_positions[0][0] + direction[0], snake_positions[0][1] + direction[1])
+            
+            # Wrap around borders
             head = (head[0] % GRID_WIDTH, head[1] % GRID_HEIGHT)
 
+            # Check collisions (fake walls don't cause death!)
             if head in snake_positions or head in obstacles:
                 # Create explosion particles
                 create_explosion_particles(head[0], head[1])
@@ -679,20 +862,35 @@ def main():
             if len(snake_positions) > 1:
                 create_trail_particle(snake_positions[1][0], snake_positions[1][1])
             
-            if head == food:
-                score += 1
-                old_level = level
-                level = score // 5 + 1
+            if head == food_pos:
+                if is_fake_food:
+                    # Fake food - player loses a segment instead!
+                    if len(snake_positions) > 3:  # Don't make it impossible
+                        snake_positions.pop()
+                        snake_positions.pop()  # Lose 2 segments
+                    sound_manager.play('game_over', 0.3)  # Sad sound
+                    create_explosion_particles(food_pos[0], food_pos[1])
+                else:
+                    # Real food
+                    score += 1
+                    old_level = level
+                    level = score // 5 + 1
+                    
+                    sound_manager.play('eat')
+                    create_food_particles(food_pos[0], food_pos[1])
+                    
+                    # Speed boost trap chance
+                    if UNFAIR_MODE and random.random() < SPEED_BOOST_TRAP_CHANCE:
+                        speed_boost_active = 240  # 4 seconds of unwanted speed
+                    
+                    # Level up sound
+                    if level > old_level:
+                        sound_manager.play('level_up')
                 
-                sound_manager.play('eat')
-                create_food_particles(food[0], food[1])
-                
-                # Level up sound
-                if level > old_level:
-                    sound_manager.play('level_up')
-                
-                food = place_food(snake_positions, obstacles)
-                obstacles = generate_obstacles(snake_positions, food)
+                # Generate new food regardless
+                food_pos, is_fake_food = place_food(snake_positions, obstacles)
+                obstacles = generate_obstacles(snake_positions, food_pos)
+                fake_walls = []  # Clear fake walls when new food appears
             else:
                 snake_positions.pop()
             
@@ -707,18 +905,33 @@ def main():
 
         # Draw everything
         screen.fill(BG_COLOR)
-        draw_grid(screen)
-        draw_snake_smooth(screen, smooth_positions)
-        draw_obstacles(screen, obstacles)
         
-        # Draw food with enhanced glow
-        draw_food_with_glow(screen, food)
+        draw_grid(screen)
+        
+        # Draw snake with unfair mechanics
+        if invisible_snake > 0:
+            draw_snake_unfair(screen, [pos for pos in smooth_positions], invisible_snake)
+        else:
+            draw_snake_smooth(screen, smooth_positions)
+            
+        draw_obstacles(screen, obstacles)
+        draw_fake_walls(screen, fake_walls)
+        
+        # Draw food with fake food indication
+        draw_food_with_glow(screen, food_pos, is_fake_food)
         
         # Draw particles
         draw_particles(screen)
 
         # Draw enhanced UI
         draw_enhanced_ui(screen, font, small_font, score, level, current_speed, high_score)
+        
+        # Draw fog of war (this should be drawn after everything else)
+        draw_fog_of_war(screen, snake_positions[0], fog_of_war)
+        
+        # Draw unfair mechanics warnings
+        draw_unfair_warnings(screen, small_font, invisible_snake, 
+                           speed_boost_active, fog_of_war)
 
         pygame.display.flip()
 
@@ -733,14 +946,16 @@ def main():
     overlay.set_alpha(128)
     screen.blit(overlay, (0, 0))
     
-    game_over = font.render("💀 GAME OVER! 💀", True, (255, 100, 100))
+    game_over = font.render("💀 GAME OVER! YOU'VE BEEN PRANKED! �", True, (255, 100, 100))
     final_score = font.render(f"Final Score: {score}", True, TEXT_COLOR)
     high_score_text = font.render(f"High Score: {high_score}", True, (255, 255, 0))
-    restart_text = font.render("Press R to restart or Q to quit", True, TEXT_COLOR)
+    unfair_text = font.render("This game was rigged from the start! 🎭", True, (255, 150, 150))
+    restart_text = font.render("Press R to get pranked again or Q to quit", True, TEXT_COLOR)
     
-    screen.blit(game_over, (SCREEN_WIDTH//2 - game_over.get_width()//2, SCREEN_HEIGHT//2 - 60))
-    screen.blit(final_score, (SCREEN_WIDTH//2 - final_score.get_width()//2, SCREEN_HEIGHT//2 - 20))
-    screen.blit(high_score_text, (SCREEN_WIDTH//2 - high_score_text.get_width()//2, SCREEN_HEIGHT//2 + 10))
+    screen.blit(game_over, (SCREEN_WIDTH//2 - game_over.get_width()//2, SCREEN_HEIGHT//2 - 80))
+    screen.blit(final_score, (SCREEN_WIDTH//2 - final_score.get_width()//2, SCREEN_HEIGHT//2 - 40))
+    screen.blit(high_score_text, (SCREEN_WIDTH//2 - high_score_text.get_width()//2, SCREEN_HEIGHT//2 - 10))
+    screen.blit(unfair_text, (SCREEN_WIDTH//2 - unfair_text.get_width()//2, SCREEN_HEIGHT//2 + 20))
     screen.blit(restart_text, (SCREEN_WIDTH//2 - restart_text.get_width()//2, SCREEN_HEIGHT//2 + 50))
     
     pygame.display.flip()
