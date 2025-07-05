@@ -14,8 +14,8 @@ except ImportError:
 
 # --- Constants ---
 CELL_SIZE = 20
-GRID_WIDTH = 35
-GRID_HEIGHT = 25
+GRID_WIDTH = 50  # Increased from 35
+GRID_HEIGHT = 35  # Increased from 25
 SCREEN_WIDTH = CELL_SIZE * GRID_WIDTH
 SCREEN_HEIGHT = CELL_SIZE * GRID_HEIGHT
 FPS = 60  # Increased for smoother animation
@@ -468,10 +468,18 @@ def draw_enhanced_ui(surface, font, small_font, score, level, speed, high_score)
     surface.blit(progress_text, (bar_x, bar_y + 10))
 
 def place_food(snake, obstacles=[]):
+    # Define UI area to avoid (top-right corner)
+    ui_area_width = 8  # cells to avoid on the right
+    ui_area_height = 8  # cells to avoid on the top
+    
     while True:
         pos = (random.randint(0, GRID_WIDTH-1),
                random.randint(0, GRID_HEIGHT-1))
-        if pos not in snake and pos not in obstacles:
+        
+        # Check if position is in the UI area (top-right corner)
+        in_ui_area = (pos[0] >= GRID_WIDTH - ui_area_width and pos[1] < ui_area_height)
+        
+        if pos not in snake and pos not in obstacles and not in_ui_area:
             # Mark if this food is fake (unfair mechanic)
             is_fake = UNFAIR_MODE and random.random() < FAKE_FOOD_CHANCE
             return pos, is_fake
@@ -575,10 +583,18 @@ def show_title_screen(surface, font, high_score):
                 return
 
 def generate_obstacles(snake, food_pos):
+    # Define UI area to avoid (top-right corner)
+    ui_area_width = 8  # cells to avoid on the right
+    ui_area_height = 8  # cells to avoid on the top
+    
     obs = []
     while len(obs) < OBSTACLE_COUNT:
         pos = (random.randint(0, GRID_WIDTH-1), random.randint(0, GRID_HEIGHT-1))
-        if pos not in snake and pos != food_pos and pos not in obs:
+        
+        # Check if position is in the UI area (top-right corner)
+        in_ui_area = (pos[0] >= GRID_WIDTH - ui_area_width and pos[1] < ui_area_height)
+        
+        if pos not in snake and pos != food_pos and pos not in obs and not in_ui_area:
             obs.append(pos)
     return obs
 
@@ -691,12 +707,22 @@ def draw_snake_unfair(surface, snake_positions, invisible_snake):
 
 def create_fake_walls(snake_positions, food_pos):
     """Create fake walls that look real but aren't"""
+    # Define UI area to avoid (top-right corner)
+    ui_area_width = 8  # cells to avoid on the right
+    ui_area_height = 8  # cells to avoid on the top
+    
     fake_walls = []
     if UNFAIR_MODE and random.random() < FAKE_WALLS_CHANCE:
-        for _ in range(3):  # Create 3 fake walls
+        attempts = 0
+        while len(fake_walls) < 3 and attempts < 20:  # Limit attempts to avoid infinite loop
             pos = (random.randint(0, GRID_WIDTH-1), random.randint(0, GRID_HEIGHT-1))
-            if pos not in snake_positions and pos != food_pos:
+            
+            # Check if position is in the UI area (top-right corner)
+            in_ui_area = (pos[0] >= GRID_WIDTH - ui_area_width and pos[1] < ui_area_height)
+            
+            if pos not in snake_positions and pos != food_pos and not in_ui_area:
                 fake_walls.append(pos)
+            attempts += 1
     return fake_walls
 
 def draw_fake_walls(surface, fake_walls):
